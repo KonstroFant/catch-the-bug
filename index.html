@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Catch the Errors - Father's Day Game</title>
+<style>
+  html, body {
+    margin: 0; 
+    padding: 0;
+    overflow: hidden;
+    background: black; 
+    color: #0f0; 
+    font-family: Consolas, monospace;
+    user-select: none;
+    height: 100%;
+    width: 100%;
+  }
+  #gameCanvas {
+    display: block; 
+    background: black;
+  }
+  #overlay {
+    position: absolute; 
+    top: 10px; 
+    left: 50%; 
+    transform: translateX(-50%);
+    color: #0f0;
+    font-size: 24px;
+    font-family: Consolas, monospace;
+    pointer-events: none;
+    user-select: none;
+    z-index: 2;
+  }
+  #restartButton, #startButton {
+    position: absolute;
+    top: 60%; 
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 18px 36px;
+    font-size: 22px;
+    font-family: Consolas, monospace;
+    cursor: pointer;
+    background-color: #0f0;
+    border: none;
+    color: black;
+    border-radius: 8px;
+    z-index: 3;
+  }
+  #restartButton {
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+<div id="overlay">Use ← → or A D keys to move the net and catch the bugs!</div>
+<button id="startButton">Start Game</button>
+<button id="restartButton">Restart Game</button>
+
+<script>
+(() => 
+{
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const restartButton = document.getElementById('restartButton');
+  const startButton = document.getElementById('startButton');
+
+  let CANVAS_WIDTH = window.innerWidth;
+  let CANVAS_HEIGHT = window.innerHeight;
+
+  function resizeCanvas() 
+  {
+    CANVAS_WIDTH = window.innerWidth;
+    CANVAS_HEIGHT = window.innerHeight;
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
+
+    basket.y = CANVAS_HEIGHT - 60;
+
+    initMatrixDrops();
+  }
+  window.addEventListener('resize', () => 
+  {
+    resizeCanvas();
+  });
+
+  const basket = {
+    x: CANVAS_WIDTH / 2 - 50,
+    y: CANVAS_HEIGHT - 60,
+    width: 100,
+    height: 50,
+    speed: 1000,
+  };
+
+  const errorWords = [
+    'NullReferenceException',
+    'StackOverflow',
+    'OutOfMemory',
+    'InvalidCast',
+    'IndexOutOfRange',
+    'DivideByZero',
+    'TimeoutException',
+    'AccessDenied',
+    'Deadlock',
+    'BufferOverflow',
+    'SegmentationFault',
+    'SyntaxError',
+    'BadImageFormat',
+    'TypeLoadException',
+    'MissingMethod',
+    'AmbiguousMatch',
+    'ArgumentNull',
+    'IOException',
+    'ArgumentOutOfRange',
+    'FieldAccess',
+    'SqlException',
+    'NotImplemented',
+    'ObjectDisposed',
+    'InvalidOperation',
+    'FormatException',
+    'Serialization',
+    'ThreadAbort',
+    'UriFormat',
+    'AggregateException',
+    'ArithmeticException',
+    'MissingMember',
+    'ReflectionTypeLoad',
+    'SecurityException',
+    'FileNotFound',
+    'KeyNotFound',
+    'PlatformNotSupported',
+    'InvalidProgram',
+    'DivideByNegative',
+    'OverflowException',
+    'ConcurrentModification',
+    'StackOverflowException',
+    'NullPointer',
+    'AccessViolation',
+    'BadCast',
+    'ConfigurationErrors',
+    'IndexOutOfBounds',
+    'ExecutionEngine',
+    'InsufficientMemory',
+    'ArgumentException',
+    'ObjectNotFound',
+  ];
+
+  const laneCount = 12;
+  function laneWidth() 
+  {
+    return CANVAS_WIDTH / laneCount;
+  }
+
+  let keys = {};
+  let falling = [];
+  let activeLanes = new Array(laneCount).fill(false);
+
+  let score = 0;
+  let missed = 0;
+  const maxMissed = 10;
+  const goal = 30;
+  let gameOver = false;
+  let gameStarted = false;
+
+  const winningMessages = [
+    "Well done, Dad! Exception-free victory!",
+    "You're the ultimate debugger!",
+    "Remember to catch exceptions, not feelings!",
+    "Code compiles without errors!",
+    "You handled that like a pro!",
+  ];
+
+  const losingMessages = [
+    "Oops! Unhandled exception occurred!",
+    "Debugging failed! Try again.",
+    "StackOverflow in your skills!",
+    "Better luck next time, coder!",
+    "Exception not handled! Whoops!",
+  ];
+
+  window.addEventListener('keydown', e => 
+  {
+    keys[e.key] = true;
+  });
+  window.addEventListener('keyup', e => 
+  {
+    keys[e.key] = false;
+  });
+
+  function drawBasket() 
+  {
+    ctx.fillStyle = '#2255dd';
+    ctx.fillRect(basket.x + basket.width / 2 - 15, basket.y + 25, 30, 20);
+
+    ctx.beginPath();
+    ctx.strokeStyle = '#77aaff';
+    ctx.lineWidth = 4;
+    ctx.arc(basket.x + basket.width / 2, basket.y + 25, 45, Math.PI, 0);
+    ctx.stroke();
+
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#99ccff';
+    for(let i = 1; i < 7; i++) 
+    {
+      const startX = basket.x + basket.width / 2 - 45 + i * (90 / 7);
+      const startY = basket.y + 25 - Math.sqrt(45*45 - (startX - (basket.x + basket.width / 2))**2);
+      const endX = startX;
+      const endY = basket.y + 25;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+    }
+  }
+
+  function canSpawnAtLane(candidateLane) 
+  {
+    const spawnLineY = -30;
+    const verticalThreshold = 100;
+
+    for (const f of falling) 
+    {
+      if (Math.abs(f.y - spawnLineY) < verticalThreshold) 
+      {
+        if (Math.abs(f.lane - candidateLane) <= 1) 
+        {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  class FallingError 
+  {
+    constructor() 
+    {
+      const possibleLanes = [];
+
+      for (let lane = 0; lane < laneCount; lane++) 
+      {
+        if (!activeLanes[lane]) 
+        {
+          if (canSpawnAtLane(lane)) 
+          {
+            possibleLanes.push(lane);
+          }
+        }
+      }
+
+      if (possibleLanes.length === 0) 
+      {
+        this.lane = null;
+        return;
+      }
+
+      this.text = errorWords[Math.floor(Math.random() * errorWords.length)];
+      this.lane = possibleLanes[Math.floor(Math.random() * possibleLanes.length)];
+
+      activeLanes[this.lane] = true;
+      this.x = this.lane * laneWidth() + 10;
+      this.y = -30;
+      this.baseSpeed = 200;
+    }
+
+    update(deltaTime) 
+    {
+      this.y += this.baseSpeed * deltaTime * (1 + 2*score / goal);
+    }
+
+    draw() 
+    {
+      ctx.fillStyle = '#0f0';
+      ctx.font = '18px Consolas';
+      ctx.fillText(this.text, this.x, this.y);
+    }
+  }
+
+  let lastTime = 0;
+  let spawnTimer = 0;
+  const MAX_FALLING_ERRORS = 4;
+
+  function resetGame() 
+  {
+    score = 0;
+    missed = 0;
+    gameOver = false;
+    falling = [];
+    activeLanes.fill(false);
+    restartButton.style.display = 'none';
+    overlay.textContent = 'Use ← → or A D keys to move the net and catch the bugs!';
+    basket.x = CANVAS_WIDTH / 2 - basket.width / 2;
+    lastTime = performance.now();
+  }
+
+  function endGame(won) 
+  {
+    gameOver = true;
+    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '40px Consolas';
+
+    let finalMessage = '';
+    if(won) 
+    {
+      const msg = winningMessages[Math.floor(Math.random() * winningMessages.length)];
+      finalMessage = msg + ` Final Score: ${score}`;
+      ctx.fillStyle = '#0f0';
+      ctx.fillText(finalMessage, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+    }
+    else 
+    {
+      const msg = losingMessages[Math.floor(Math.random() * losingMessages.length)];
+      finalMessage = msg + ` Final Score: ${score}`;
+      ctx.fillStyle = '#f55';
+      ctx.fillText(finalMessage, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+    }
+
+    restartButton.style.display = 'block';
+  }
+
+  const matrixChars = "abcdefghijklmnopqrstuvwxyz0123456789@#$%^&*";
+  let matrixColumns = 0;
+  const matrixDrops = [];
+
+  function initMatrixDrops() 
+  {
+    matrixColumns = Math.floor(CANVAS_WIDTH / 20);
+    matrixDrops.length = 0;
+    for(let i = 0; i < matrixColumns; i++) 
+    {
+      matrixDrops.push(1);
+    }
+  }
+
+  function drawMatrix() 
+  {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    ctx.fillStyle = '#0f0';
+    ctx.font = '16px monospace';
+
+    for(let i = 0; i < matrixColumns; i++) 
+    {
+      const text = matrixChars.charAt(Math.floor(Math.random() * matrixChars.length));
+      ctx.fillText(text, i * 20, matrixDrops[i] * 20);
+
+      matrixDrops[i]++;
+      if(matrixDrops[i] * 20 > CANVAS_HEIGHT && Math.random() > 0.975) 
+      {
+        matrixDrops[i] = 0;
+      }
+    }
+  }
+
+  function loop(timestamp) 
+  {
+    if (!gameStarted) return; // don't run loop until game started
+
+    const deltaTime = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+
+    if(gameOver) 
+    {
+      return;
+    }
+
+    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    drawMatrix();
+
+    if (keys['ArrowLeft'] || keys['a'] || keys['A']) 
+    {
+      basket.x -= basket.speed * deltaTime;
+      if (basket.x < 0) basket.x = 0;
+    }
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) 
+    {
+      basket.x += basket.speed * deltaTime;
+      if (basket.x + basket.width > CANVAS_WIDTH) basket.x = CANVAS_WIDTH - basket.width;
+    }
+
+    drawBasket();
+
+    spawnTimer += deltaTime;
+
+    if (spawnTimer > 0.5 && falling.length < MAX_FALLING_ERRORS) 
+    {
+      let newError = new FallingError();
+      if (newError.lane !== null) 
+      {
+        falling.push(newError);
+        spawnTimer = 0;
+      }
+    }
+
+    for (let i = falling.length - 1; i >= 0; i--) 
+    {
+      falling[i].update(deltaTime);
+      falling[i].draw();
+
+      const textWidth = ctx.measureText(falling[i].text).width;
+      const textHeight = 20;
+
+      if (falling[i].y > CANVAS_HEIGHT) 
+      {
+        activeLanes[falling[i].lane] = false;
+        falling.splice(i, 1);
+        missed++;
+        if (missed >= maxMissed) 
+        {
+          endGame(false);
+          return;
+        }
+      } 
+      else 
+      {
+        const basketRect = {
+          left: basket.x,
+          right: basket.x + basket.width,
+          top: basket.y,
+          bottom: basket.y + basket.height,
+        };
+        const errorRect = {
+          left: falling[i].x,
+          right: falling[i].x + textWidth,
+          top: falling[i].y - textHeight,
+          bottom: falling[i].y,
+        };
+
+        const collided =
+          basketRect.left < errorRect.right &&
+          basketRect.right > errorRect.left &&
+          basketRect.top < errorRect.bottom &&
+          basketRect.bottom > errorRect.top;
+
+        if (collided) 
+        {
+          activeLanes[falling[i].lane] = false;
+          falling.splice(i, 1);
+          score++;
+          if (score >= goal) 
+          {
+            endGame(true);
+            return;
+          }
+        }
+      }
+    }
+
+    ctx.fillStyle = '#0f0';
+    ctx.font = '20px Consolas';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Score: ${score}`, 20, 30);
+    ctx.fillText(`Missed: ${missed}/${maxMissed}`, 20, 60);
+
+    requestAnimationFrame(loop);
+  }
+
+  restartButton.addEventListener('click', () => 
+  {
+    resetGame();
+    gameStarted = true;
+    restartButton.style.display = 'none';
+    startButton.style.display = 'none';
+    lastTime = performance.now();
+    requestAnimationFrame(loop);
+  });
+
+  startButton.addEventListener('click', () =>
+  {
+    resetGame();
+    gameStarted = true;
+    startButton.style.display = 'none';
+    restartButton.style.display = 'none';
+    lastTime = performance.now();
+    requestAnimationFrame(loop);
+  });
+
+  resizeCanvas();
+
+  // Do NOT call resetGame() here, wait for start button click
+
+})();
+</script>
+
+</body>
+</html>
